@@ -47,10 +47,26 @@ function isAdmin(request) {
 export default async (request) => {
   try {
     /*
+     * Authentication check.
+     *
      * GET remains public.
-     * Anyone can view the journal.
+     * If ?action=auth is supplied, verify the password
+     * without exposing the password itself.
      */
     if (request.method === "GET") {
+      const url = new URL(request.url);
+
+      if (url.searchParams.get("action") === "auth") {
+        if (!isAdmin(request)) {
+          return json({ authenticated: false }, 401);
+        }
+
+        return json({ authenticated: true });
+      }
+
+      /*
+       * Public journal.
+       */
       const { blobs } = await store.list();
       const trades = [];
 
@@ -105,6 +121,7 @@ export default async (request) => {
     }
 
     return json({ error: "Method not allowed." }, 405);
+
   } catch (error) {
     console.error("Trades function error:", error);
 
