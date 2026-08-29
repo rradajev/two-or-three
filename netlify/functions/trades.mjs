@@ -25,21 +25,54 @@ function validTrade(t) {
   );
 }
 
+function isAdmin(request) {
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!password) {
+    console.error("ADMIN_PASSWORD is not configured.");
+    return false;
+  }
+
+  const auth = request.headers.get("authorization");
+
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return false;
+  }
+
+  const suppliedPassword = auth.slice(7);
+
+  return suppliedPassword === password;
+}
+
 export default async (request) => {
   try {
+    /*
+     * GET remains public.
+     * Anyone can view the journal.
+     */
     if (request.method === "GET") {
       const { blobs } = await store.list();
       const trades = [];
 
       for (const blob of blobs) {
         const trade = await store.get(blob.key, { type: "json" });
-        if (trade && validTrade(trade)) trades.push(trade);
+
+        if (trade && validTrade(trade)) {
+          trades.push(trade);
+        }
       }
 
       return json(trades);
     }
 
+    /*
+     * POST is admin-only.
+     */
     if (request.method === "POST") {
+      if (!isAdmin(request)) {
+        return json({ error: "Unauthorised." }, 401);
+      }
+
       const trade = await request.json();
 
       if (!validTrade(trade)) {
@@ -47,10 +80,18 @@ export default async (request) => {
       }
 
       await store.setJSON(trade.id, trade);
+
       return json(trade, 201);
     }
 
+    /*
+     * DELETE is admin-only.
+     */
     if (request.method === "DELETE") {
+      if (!isAdmin(request)) {
+        return json({ error: "Unauthorised." }, 401);
+      }
+
       const url = new URL(request.url);
       const id = url.searchParams.get("id");
 
@@ -59,12 +100,17 @@ export default async (request) => {
       }
 
       await store.delete(id);
+
       return json({ ok: true });
     }
 
     return json({ error: "Method not allowed." }, 405);
   } catch (error) {
     console.error("Trades function error:", error);
-    return json({ error: "Unable to access trade storage." }, 500);
+
+    return json(
+      { error: "Unable to access trade storage." },
+      500
+    );
   }
 };
